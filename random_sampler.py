@@ -64,22 +64,6 @@ def generate_valid_random_molecules_batch(rxn_id: int, n_samples: int, db_path: 
                 batch_size_actual * elite_frac)))
             n_rand = batch_size_actual - n_elite
 
-            n_proxim = n_elite // 2
-            proxim_batch = generate_proximity_from_elites(
-                rxn_id=rxn_id,
-                n=n_proxim,
-                elite_names=elite_names,
-                molecules_A=molecules_A,
-                molecules_B=molecules_B,
-                molecules_C=molecules_C,
-                is_three_component=is_three_component,
-                mutation_prob=mutation_prob,
-                avoid_names=emitted_names,
-                max_tries=10,
-                proximity_range=24,
-            )
-
-            n_elite -= n_proxim
             elite_batch = generate_offspring_from_elites(
                 rxn_id=rxn_id,
                 n=n_elite,
@@ -94,7 +78,6 @@ def generate_valid_random_molecules_batch(rxn_id: int, n_samples: int, db_path: 
             )
             emitted_names.update(elite_batch)
         else:
-            proxim_batch = []
             elite_batch = []
             n_rand = batch_size_actual
 
@@ -104,7 +87,7 @@ def generate_valid_random_molecules_batch(rxn_id: int, n_samples: int, db_path: 
         rand_batch = [n for n in rand_batch if n and (
             n not in emitted_names)]
 
-        batch_molecules = proxim_batch + elite_batch + rand_batch
+        batch_molecules = elite_batch + rand_batch
 
         batch_sampler_data = {"molecules": batch_molecules}
         batch_valid_molecules, batch_valid_smiles, batch_valid_keys = validate_molecules_sampler(
@@ -249,75 +232,6 @@ def generate_offspring_from_elites(rxn_id: int, n: int, elite_names: list[str],
             avoid_names.add(name)
 
     return out
-
-
-def generate_proximity_from_elites(rxn_id: int, n: int, elite_names: list[str],
-                                   molecules_A, molecules_B, molecules_C, is_three_component: bool,
-                                   mutation_prob: float = 0.1,
-                                   avoid_names: set[str] = None,
-                                   avoid_inchikeys: set[str] = None,
-                                   max_tries: int = 10,
-                                   proximity_range: int = 32) -> list[str]:
-    elite_components = []
-    for name in elite_names:
-        A, B, C = _parse_components(name)
-        elite_components.append((A, B, C))
-
-    pool_A_ids = _ids_from_pool(molecules_A)
-    pool_B_ids = _ids_from_pool(molecules_B)
-    pool_C_ids = _ids_from_pool(molecules_C) if is_three_component else []
-
-    out = []
-    local_names = set()
-    for _ in range(n * max_tries):
-        # pick random elite
-        A, B, C = rng.choice(elite_components)
-        A_idx = pool_A_ids.index(A)
-        proxim_A_ids = pool_A_ids[max(
-            0, A_idx - proximity_range):min(A_idx + proximity_range, len(pool_A_ids))]
-        B_idx = pool_B_ids.index(B)
-        proxim_B_ids = pool_B_ids[max(
-            0, B_idx - proximity_range):min(B_idx + proximity_range, len(pool_B_ids))]
-        if is_three_component:
-            C_idx = pool_C_ids.index(C)
-            proxim_C_ids = pool_C_ids[max(
-                0, C_idx - proximity_range):min(C_idx + proximity_range, len(pool_C_ids))]
-
-        A = rng.choice(proxim_A_ids)
-        B = rng.choice(proxim_B_ids)
-        if is_three_component:
-            C = rng.choice(proxim_C_ids)
-            name = f"rxn:{rxn_id}:{A}:{B}:{C}"
-        else:
-            name = f"rxn:{rxn_id}:{A}:{B}"
-
-        if avoid_names and name in avoid_names:
-            continue
-        if name in local_names:
-            continue
-
-        if avoid_inchikeys:
-            try:
-                s = get_smiles_from_reaction(name)
-                if s:
-                    mol = Chem.MolFromSmiles(s)
-                    if mol:
-                        key = Chem.MolToInchiKey(mol)
-                        if key in avoid_inchikeys:
-                            continue
-            except Exception:
-                pass
-
-        out.append(name)
-        if len(out) >= n:
-            break
-
-        local_names.add(name)
-        if avoid_names is not None:
-            avoid_names.add(name)
-
-    return out
-    
 
 
 def run_sampler(n_samples: int = 1000,
