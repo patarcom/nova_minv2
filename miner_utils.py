@@ -1,5 +1,4 @@
 import sys
-
 import os
 
 from reaction_utils import get_smiles_from_reaction
@@ -55,7 +54,22 @@ def validate_molecules_sampler(
                 num_rotatable_bonds = Descriptors.NumRotatableBonds(mol)
                 if num_rotatable_bonds < config['min_rotatable_bonds'] or num_rotatable_bonds > config['max_rotatable_bonds']:
                     continue
-                
+
+                # Calculate properties using RDKit Descriptors
+                mw = Descriptors.MolWt(mol)
+                logp = Descriptors.MolLogP(mol)
+                hbd = Descriptors.NumHDonors(mol)
+                hba = Descriptors.NumHAcceptors(mol)
+
+                # Lipinski's Rule of Five Check (<= 1 violation is often acceptable)
+                ro5_violations = 0
+                if mw > 500: ro5_violations += 1
+                if logp > 5: ro5_violations += 1
+                if hbd > 5: ro5_violations += 1
+                if hba > 10: ro5_violations += 1
+                if ro5_violations > 1:
+                    continue
+
                 key = Chem.MolToInchiKey(mol)
             except Exception as e:
                 continue
@@ -67,8 +81,6 @@ def validate_molecules_sampler(
             continue
         
     return valid_names, valid_smiles, valid_keys
-
-
 
 
 def find_chemically_identical(key_list: list[str]) -> dict:
